@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>推しログ</title>
+    <title>推しログ Stable</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #F8F5F2; color: #3D2B1F; margin: 0; font-family: sans-serif; }
-        .card { background: white; border-radius: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        body { background: #F8F5F2; color: #3D2B1F; margin: 0; font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
+        .card { background: white; border-radius: 1.25rem; box-shadow: 0 2px 12px rgba(0,0,0,0.04); }
+        .safe-area { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
 <body>
@@ -21,48 +22,72 @@
         function App() {
             const [animes, setAnimes] = useState(() => {
                 try {
-                    const saved = localStorage.getItem('oshi-v5');
-                    return saved ? JSON.parse(saved) : [];
-                } catch (e) { return []; }
+                    return JSON.parse(localStorage.getItem('oshi-v6') || '[]');
+                } catch { return []; }
             });
             const [view, setView] = useState('home');
             const [selId, setSelId] = useState(null);
             const [edit, setEdit] = useState(null);
             const [img, setImg] = useState("");
             const [cat, setCat] = useState("すべて");
+            const [loading, setLoading] = useState(false);
 
             useEffect(() => {
-                localStorage.setItem('oshi-v5', JSON.stringify(animes));
+                try { localStorage.setItem('oshi-v6', JSON.stringify(animes)); } catch (e) {
+                    alert("容量がいっぱいです！不要な画像を消してください。");
+                }
             }, [animes]);
 
-            const goHome = () => { setView('home'); setEdit(null); setSelId(null); setImg(""); };
-
+            // 画像を極限まで小さく圧縮する魔法
             const hImg = (e) => {
-                const f = e.target.files[0];
-                if (!f) return;
-                const r = new FileReader();
-                r.onloadend = () => setImg(r.result);
-                r.readAsDataURL(f);
+                const file = e.target.files[0];
+                if (!file) return;
+                setLoading(true);
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const imgObj = new Image();
+                    imgObj.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 400; // 横幅最大400pxに制限
+                        let width = imgObj.width;
+                        let height = imgObj.height;
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(imgObj, 0, 0, width, height);
+                        setImg(canvas.toDataURL('image/jpeg', 0.6)); // 画質を60%に落として軽量化
+                        setLoading(false);
+                    };
+                    imgObj.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
             };
+
+            const goHome = () => { setView('home'); setEdit(null); setSelId(null); setImg(""); };
 
             const sAni = (e) => {
                 e.preventDefault();
                 const d = new FormData(e.target);
                 const obj = { 
+                    id: edit ? edit.id : Date.now(),
                     title: d.get('t') || "無題", 
                     memo: d.get('m') || "", 
                     cat: d.get('c') || "未設定", 
                     img: img || edit?.img || "" 
                 };
                 if (edit) setAnimes(animes.map(a => a.id === edit.id ? { ...a, ...obj } : a));
-                else setAnimes([{ id: Date.now(), ...obj, charas: [] }, ...animes]);
+                else setAnimes([obj, ...animes]);
                 goHome();
             };
 
             const sCha = (e) => {
                 e.preventDefault();
                 const d = new FormData(e.target);
-                const obj = { id: Date.now(), name: d.get('n') || "キャラ名なし", tag: d.get('g') || "未設定", img: img };
+                const obj = { id: Date.now(), name: d.get('n') || "キャラ名", tag: d.get('g') || "未設定", img: img };
                 setAnimes(animes.map(a => a.id === selId ? { ...a, charas: [...(a.charas || []), obj] } : a));
                 setImg(""); e.target.reset();
             };
@@ -74,15 +99,15 @@
                 return n;
             };
 
-            const allC = animes.flatMap(a => (a.charas || []).map(c => ({ ...c, aT: a.title })));
+            const allC = animes.flatMap(a => (a.charas || []).map(c => ({ ...c, aT: a.title, aI: a.id })));
             const cats = ["すべて", ...new Set(animes.map(a => a.cat))];
 
             return (
-                <div className="pb-24">
-                    <header className="bg-white p-4 sticky top-0 z-50 flex justify-between items-center shadow-sm">
+                <div className="safe-area min-h-screen">
+                    <header className="bg-white/80 backdrop-blur-md p-4 sticky top-0 z-50 flex justify-between items-center border-b">
                         <h1 className="font-bold text-orange-800 text-lg" onClick={goHome}>推しログ</h1>
                         <div className="flex gap-2">
-                            <button onClick={() => setView('cs')} className="text-[10px] border border-orange-200 px-3 py-2 rounded-full">👤 キャラ一覧</button>
+                            <button onClick={() => setView('cs')} className="text-[10px] bg-white border px-3 py-2 rounded-full shadow-sm">👤 キャラ別</button>
                             <button onClick={() => {setEdit(null); setView('add');}} className="text-[10px] bg-orange-700 text-white px-3 py-2 rounded-full font-bold">＋ 追加</button>
                         </div>
                     </header>
@@ -90,26 +115,26 @@
                     <main className="p-4 max-w-xl mx-auto">
                         {view === 'home' && (
                             <div>
-                                <div className="flex gap-2 overflow-x-auto mb-6 pb-2">
-                                    {cats.map(c => <button key={c} onClick={() => setCat(c)} className={`px-4 py-1 rounded-full text-xs whitespace-nowrap ${cat === c ? 'bg-orange-700 text-white' : 'bg-white text-gray-500'}`}>{c}</button>)}
+                                <div className="flex gap-2 overflow-x-auto mb-6 no-scrollbar">
+                                    {cats.map(c => <button key={c} onClick={() => setCat(c)} className={`px-4 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${cat === c ? 'bg-orange-700 text-white' : 'bg-white text-gray-500'}`}>{c}</button>)}
                                 </div>
                                 <div className="grid gap-4">
                                     {(cat === "すべて" ? animes : animes.filter(a => a.cat === cat)).map((a, i) => (
-                                        <div key={a.id} className="card relative group">
+                                        <div key={a.id} className="card relative active:scale-[0.98] transition-transform">
                                             <div onClick={() => { setSelId(a.id); setView('det'); }}>
-                                                {a.img ? <img src={a.img} className="w-full h-44 object-cover" /> : <div className="w-full h-20 bg-orange-50"></div>}
+                                                {a.img && <img src={a.img} className="w-full h-48 object-cover" />}
                                                 <div className="p-4">
-                                                    <div className="flex justify-between items-start">
-                                                        <span className="text-[10px] font-bold text-orange-700 bg-orange-50 px-2 py-0.5 rounded">RANK {i+1}</span>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="text-[10px] font-bold text-orange-700 px-2 py-0.5 bg-orange-50 rounded">RANK {i+1}</span>
                                                         <span className="text-[10px] text-gray-400">{a.cat}</span>
                                                     </div>
-                                                    <h2 className="font-bold text-lg mt-1">{a.title}</h2>
+                                                    <h2 className="font-bold text-lg">{a.title}</h2>
                                                 </div>
                                             </div>
                                             <div className="absolute top-2 right-2 flex gap-1">
-                                                <button onClick={() => setAnimes(mv(animes, i, -1))} className="bg-white/90 w-8 h-8 rounded-full shadow flex items-center justify-center text-xs">▲</button>
-                                                <button onClick={() => setAnimes(mv(animes, i, 1))} className="bg-white/90 w-8 h-8 rounded-full shadow flex items-center justify-center text-xs">▼</button>
-                                                <button onClick={() => {setEdit(a); setImg(a.img); setView('add');}} className="bg-white/90 w-8 h-8 rounded-full shadow flex items-center justify-center text-xs">✎</button>
+                                                <button onClick={() => setAnimes(mv(animes, i, -1))} className="bg-white/90 w-8 h-8 rounded-full shadow-sm flex items-center justify-center text-xs">▲</button>
+                                                <button onClick={() => setAnimes(mv(animes, i, 1))} className="bg-white/90 w-8 h-8 rounded-full shadow-sm flex items-center justify-center text-xs">▼</button>
+                                                <button onClick={() => {setEdit(a); setImg(a.img); setView('add');}} className="bg-white/90 w-8 h-8 rounded-full shadow-sm flex items-center justify-center text-xs">✎</button>
                                             </div>
                                         </div>
                                     ))}
@@ -119,14 +144,14 @@
 
                         {view === 'cs' && (
                             <div>
-                                <h2 className="font-bold border-l-4 border-orange-700 pl-2 mb-6">全キャラまとめ・分析</h2>
+                                <h2 className="font-bold mb-6 border-l-4 border-orange-700 pl-3">全キャラまとめ</h2>
                                 <div className="grid grid-cols-2 gap-3">
                                     {allC.map(c => (
                                         <div key={c.id} className="card p-4 text-center">
-                                            <div className="w-20 h-20 mx-auto rounded-full overflow-hidden mb-3 border-2 border-orange-100">{c.img ? <img src={c.img} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full bg-gray-50 text-2xl">👤</div>}</div>
-                                            <div className="text-[10px] font-bold text-orange-700 uppercase tracking-tighter">{c.tag}</div>
+                                            <div className="w-20 h-20 mx-auto rounded-full overflow-hidden mb-3 ring-4 ring-orange-50">{c.img ? <img src={c.img} className="w-full h-full object-cover" /> : <div className="bg-gray-100 h-full flex items-center justify-center">👤</div>}</div>
+                                            <div className="text-[9px] font-bold text-orange-600 mb-1">{c.tag}</div>
                                             <div className="font-bold text-sm truncate">{c.name}</div>
-                                            <div className="text-[10px] text-gray-400 mt-1 truncate">{c.aT}</div>
+                                            <div className="text-[10px] text-gray-400 truncate mt-1">{c.aT}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -135,36 +160,39 @@
 
                         {view === 'det' && (
                             <div>
-                                <button onClick={goHome} className="text-sm text-gray-400 mb-4">← 戻る</button>
+                                <button onClick={goHome} className="text-sm text-gray-400 mb-4 flex items-center">← 戻る</button>
                                 {animes.filter(a => a.id === selId).map(a => (
                                     <div key={a.id}>
-                                        <div className="card p-6 mb-6">
-                                            <h2 className="font-bold text-2xl text-orange-900">{a.title}</h2>
-                                            <p className="text-sm text-gray-600 mt-4 whitespace-pre-wrap">{a.memo}</p>
+                                        <div className="card p-6 mb-8 border-t-4 border-orange-700">
+                                            <h2 className="font-bold text-2xl mb-4">{a.title}</h2>
+                                            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{a.memo}</p>
                                         </div>
-                                        <h3 className="font-bold mb-4">推しキャラランキング</h3>
+                                        <h3 className="font-bold mb-4 flex items-center gap-2">🏆 推しキャラ順位</h3>
                                         <div className="grid gap-3">
                                             {(a.charas || []).map((c, ci) => (
                                                 <div key={c.id} className="card p-3 flex gap-4 items-center relative">
-                                                    <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-50">{c.img ? <img src={c.img} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full">👤</div>}</div>
+                                                    <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-50 flex-shrink-0">{c.img ? <img src={c.img} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full">👤</div>}</div>
                                                     <div className="flex-1">
-                                                        <div className="text-[10px] font-bold text-orange-700">RANK {ci+1} / {c.tag}</div>
-                                                        <div className="font-bold text-base">{c.name}</div>
+                                                        <div className="text-[9px] font-bold text-orange-700">#{ci+1} / {c.tag}</div>
+                                                        <div className="font-bold">{c.name}</div>
                                                     </div>
                                                     <div className="flex flex-col gap-1">
                                                         <button onClick={() => {const nc = mv(a.charas, ci, -1); setAnimes(animes.map(an => an.id === a.id ? {...an, charas: nc} : an))}} className="p-1 text-gray-300">▲</button>
                                                         <button onClick={() => {const nc = mv(a.charas, ci, 1); setAnimes(animes.map(an => an.id === a.id ? {...an, charas: nc} : an))}} className="p-1 text-gray-300">▼</button>
                                                     </div>
-                                                    <button onClick={() => {if(confirm("この推しを削除しますか？")) setAnimes(animes.map(an => an.id === a.id ? {...an, charas: an.charas.filter(cc => cc.id !== c.id)} : an))} } className="absolute top-1 right-2 text-red-200">×</button>
+                                                    <button onClick={() => {if(confirm("削除しますか？")) setAnimes(animes.map(an => an.id === a.id ? {...an, charas: an.charas.filter(cc => cc.id !== c.id)} : an))} } className="absolute -top-1 -right-1 bg-red-100 text-red-400 w-5 h-5 rounded-full text-xs flex items-center justify-center">×</button>
                                                 </div>
                                             ))}
                                         </div>
-                                        <form onSubmit={sCha} className="mt-8 card p-6 border-2 border-dashed border-orange-200">
-                                            <p className="text-xs font-bold text-center mb-4 text-orange-700">推しキャラを追加</p>
-                                            <input name="n" required placeholder="キャラ名" className="w-full mb-3 p-2 border-b outline-none text-sm" />
-                                            <input name="g" placeholder="タグ・分析（例：癒やし系、最強）" className="w-full mb-4 p-2 border-b outline-none text-sm" />
-                                            <div className="flex justify-between items-center"><input type="file" onChange={hImg} className="text-[10px]" /><button className="bg-orange-700 text-white px-6 py-2 rounded-full text-xs font-bold">追加</button></div>
-                                            {img && <img src={img} className="mt-4 w-16 h-16 object-cover rounded-lg mx-auto" />}
+                                        <form onSubmit={sCha} className="mt-8 card p-6 border-2 border-dashed border-orange-100">
+                                            <p className="text-xs font-bold text-center mb-4 text-orange-800">推しキャラを追加</p>
+                                            <input name="n" required placeholder="キャラ名" className="w-full mb-3 p-3 bg-gray-50 rounded-xl outline-none text-sm" />
+                                            <input name="g" placeholder="カテゴリー（癒やし、クールなど）" className="w-full mb-4 p-3 bg-gray-50 rounded-xl outline-none text-sm" />
+                                            <div className="flex justify-between items-center gap-2">
+                                                <input type="file" accept="image/*" onChange={hImg} className="text-[10px] overflow-hidden" />
+                                                <button disabled={loading} className="bg-orange-700 text-white px-6 py-2 rounded-full text-xs font-bold disabled:bg-gray-400">{loading ? "処理中..." : "追加"}</button>
+                                            </div>
+                                            {img && <img src={img} className="mt-4 w-16 h-16 object-cover rounded-full mx-auto ring-2 ring-orange-100" />}
                                         </form>
                                     </div>
                                 ))}
@@ -173,26 +201,31 @@
 
                         {view === 'add' && (
                             <div className="card p-6">
-                                <h2 className="font-bold text-xl mb-8 text-center">{edit ? "作品情報を編集" : "新しい作品を追加"}</h2>
+                                <h2 className="font-bold text-xl mb-8 text-center">{edit ? "内容を書き換える" : "新しい作品"}</h2>
                                 <form onSubmit={sAni} className="grid gap-6">
-                                    <div className="border-b-2 focus-within:border-orange-700 transition-colors">
-                                        <label className="text-[10px] font-bold text-gray-400">作品名</label>
-                                        <input name="t" defaultValue={edit?.title} required className="w-full py-2 outline-none text-lg" />
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-400 ml-1">作品タイトル</label>
+                                        <input name="t" defaultValue={edit?.title} required className="w-full p-3 bg-gray-50 rounded-2xl outline-none border-2 border-transparent focus:border-orange-200" />
                                     </div>
-                                    <div className="border-b-2 focus-within:border-orange-700 transition-colors">
-                                        <label className="text-[10px] font-bold text-gray-400">カテゴリー（例：殿堂入り、2026）</label>
-                                        <input name="c" defaultValue={edit?.cat} className="w-full py-2 outline-none text-sm" />
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-400 ml-1">カテゴリー（2026春、殿堂入りなど）</label>
+                                        <input name="c" defaultValue={edit?.cat} className="w-full p-3 bg-gray-50 rounded-2xl outline-none border-2 border-transparent focus:border-orange-200" />
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-gray-400">感想・メモ</label>
-                                        <textarea name="m" defaultValue={edit?.memo} className="w-full border p-3 rounded-xl mt-1 h-32 text-sm outline-none" />
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-400 ml-1">感想・分析メモ</label>
+                                        <textarea name="m" defaultValue={edit?.memo} className="w-full p-3 bg-gray-50 rounded-2xl h-32 outline-none border-2 border-transparent focus:border-orange-200 text-sm" />
                                     </div>
-                                    <div className="bg-orange-50 p-4 rounded-xl text-center">
-                                        <input type="file" onChange={hImg} className="text-xs" />
-                                        {img && <img src={img} className="mt-4 w-full h-44 object-cover rounded-xl shadow-sm" />}
+                                    <div className="bg-orange-50/50 p-6 rounded-3xl text-center border-2 border-dashed border-orange-100">
+                                        <input type="file" accept="image/*" onChange={hImg} className="text-xs w-full" />
+                                        {img && <div className="mt-4 relative inline-block">
+                                            <img src={img} className="w-full h-44 object-cover rounded-2xl shadow-md" />
+                                            <button type="button" onClick={() => setImg("")} className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full text-xs">×</button>
+                                        </div>}
                                     </div>
-                                    <button className="bg-orange-700 text-white py-4 rounded-2xl font-bold shadow-lg shadow-orange-700/20">保存する</button>
-                                    {edit && <button type="button" onClick={() => {if(confirm("この作品を削除しますか？")){setAnimes(animes.filter(a=>a.id!==edit.id)); goHome();}}} className="text-red-400 text-sm mt-2">この作品を削除する</button>}
+                                    <button disabled={loading} className="bg-orange-700 text-white py-4 rounded-2xl font-bold shadow-lg disabled:bg-gray-400">
+                                        {loading ? "画像を圧縮中..." : (edit ? "更新を保存" : "作品を登録する")}
+                                    </button>
+                                    {edit && <button type="button" onClick={() => {if(confirm("この作品を削除しますか？")){setAnimes(animes.filter(a=>a.id!==edit.id)); goHome();}}} className="text-red-400 text-xs mt-2">この作品を完全に削除</button>}
                                 </form>
                             </div>
                         )}
