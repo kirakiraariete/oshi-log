@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>推しログ Stable</title>
+    <title>推しログ Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #F8F5F2; color: #3D2B1F; margin: 0; font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
-        .card { background: white; border-radius: 1.25rem; box-shadow: 0 2px 12px rgba(0,0,0,0.04); }
+        body { background: #FDFBFA; color: #4A3B33; margin: 0; font-family: -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
+        .card { background: white; border-radius: 1.5rem; box-shadow: 0 4px 20px rgba(196, 112, 74, 0.08); border: 1px solid rgba(196, 112, 74, 0.05); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
         .safe-area { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
@@ -20,179 +21,181 @@
         const { useState, useEffect } = React;
 
         function App() {
+            // データ保存用キーを更新し、古い壊れたデータと混ざらないようにします
+            const STORAGE_KEY = 'oshi-log-final';
             const [animes, setAnimes] = useState(() => {
                 try {
-                    return JSON.parse(localStorage.getItem('oshi-v6') || '[]');
+                    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
                 } catch { return []; }
             });
             const [view, setView] = useState('home');
             const [selId, setSelId] = useState(null);
-            const [edit, setEdit] = useState(null);
-            const [img, setImg] = useState("");
-            const [cat, setCat] = useState("すべて");
-            const [loading, setLoading] = useState(false);
+            const [editItem, setEditItem] = useState(null);
+            const [tempImg, setTempImg] = useState("");
+            const [activeCat, setActiveCat] = useState("すべて");
+            const [isProcessing, setIsProcessing] = useState(false);
 
             useEffect(() => {
-                try { localStorage.setItem('oshi-v6', JSON.stringify(animes)); } catch (e) {
-                    alert("容量がいっぱいです！不要な画像を消してください。");
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(animes));
+                } catch (e) {
+                    console.error("Storage error:", e);
+                    alert("ブラウザの保存容量が限界です。古い作品を削除するか、画像を少なめにしてください。");
                 }
             }, [animes]);
 
-            // 画像を極限まで小さく圧縮する魔法
-            const hImg = (e) => {
+            // 画像をさらに軽量に圧縮 (320px, 50%品質)
+            const compressImage = (file) => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onload = (event) => {
+                        const img = new Image();
+                        img.src = event.target.result;
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            const scale = Math.min(1, 320 / img.width);
+                            canvas.width = img.width * scale;
+                            canvas.height = img.height * scale;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            resolve(canvas.toDataURL('image/jpeg', 0.5));
+                        };
+                    };
+                });
+            };
+
+            const handleFileChange = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                setLoading(true);
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    const imgObj = new Image();
-                    imgObj.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        const MAX_WIDTH = 400; // 横幅最大400pxに制限
-                        let width = imgObj.width;
-                        let height = imgObj.height;
-                        if (width > MAX_WIDTH) {
-                            height *= MAX_WIDTH / width;
-                            width = MAX_WIDTH;
-                        }
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(imgObj, 0, 0, width, height);
-                        setImg(canvas.toDataURL('image/jpeg', 0.6)); // 画質を60%に落として軽量化
-                        setLoading(false);
-                    };
-                    imgObj.src = event.target.result;
-                };
-                reader.readAsDataURL(file);
+                setIsProcessing(true);
+                const smallImg = await compressImage(file);
+                setTempImg(smallImg);
+                setIsProcessing(false);
             };
 
-            const goHome = () => { setView('home'); setEdit(null); setSelId(null); setImg(""); };
+            const resetState = () => {
+                setView('home'); setEditItem(null); setSelId(null); setTempImg(""); setIsProcessing(false);
+            };
 
-            const sAni = (e) => {
+            const saveAnime = (e) => {
                 e.preventDefault();
                 const d = new FormData(e.target);
-                const obj = { 
-                    id: edit ? edit.id : Date.now(),
-                    title: d.get('t') || "無題", 
-                    memo: d.get('m') || "", 
-                    cat: d.get('c') || "未設定", 
-                    img: img || edit?.img || "" 
+                const newData = {
+                    id: editItem ? editItem.id : Date.now(),
+                    title: d.get('t') || "無題",
+                    memo: d.get('m') || "",
+                    cat: d.get('c') || "未設定",
+                    img: tempImg || (editItem ? editItem.img : ""),
+                    charas: editItem ? (editItem.charas || []) : []
                 };
-                if (edit) setAnimes(animes.map(a => a.id === edit.id ? { ...a, ...obj } : a));
-                else setAnimes([obj, ...animes]);
-                goHome();
+
+                if (editItem) {
+                    setAnimes(animes.map(a => a.id === editItem.id ? newData : a));
+                } else {
+                    setAnimes([newData, ...animes]);
+                }
+                resetState();
             };
 
-            const sCha = (e) => {
+            const saveChara = (e) => {
                 e.preventDefault();
                 const d = new FormData(e.target);
-                const obj = { id: Date.now(), name: d.get('n') || "キャラ名", tag: d.get('g') || "未設定", img: img };
-                setAnimes(animes.map(a => a.id === selId ? { ...a, charas: [...(a.charas || []), obj] } : a));
-                setImg(""); e.target.reset();
+                const newChara = {
+                    id: Date.now(),
+                    name: d.get('n') || "キャラ名",
+                    tag: d.get('g') || "分析中",
+                    img: tempImg
+                };
+                setAnimes(animes.map(a => a.id === selId ? { ...a, charas: [...(a.charas || []), newChara] } : a));
+                setTempImg(""); e.target.reset();
             };
 
-            const mv = (l, i, d) => {
-                const n = [...(l || [])];
-                if (i+d < 0 || i+d >= n.length) return l;
-                [n[i], n[i+d]] = [n[i+d], n[i]];
-                return n;
+            const moveItem = (list, index, dir) => {
+                const newList = [...(list || [])];
+                if (index + dir < 0 || index + dir >= newList.length) return list;
+                [newList[index], newList[index + dir]] = [newList[index + dir], newList[index]];
+                return newList;
             };
 
-            const allC = animes.flatMap(a => (a.charas || []).map(c => ({ ...c, aT: a.title, aI: a.id })));
             const cats = ["すべて", ...new Set(animes.map(a => a.cat))];
 
             return (
                 <div className="safe-area min-h-screen">
-                    <header className="bg-white/80 backdrop-blur-md p-4 sticky top-0 z-50 flex justify-between items-center border-b">
-                        <h1 className="font-bold text-orange-800 text-lg" onClick={goHome}>推しログ</h1>
+                    <header className="bg-white/90 backdrop-blur-lg p-4 sticky top-0 z-50 flex justify-between items-center border-b border-orange-50">
+                        <h1 className="font-bold text-orange-900 text-xl tracking-tight" onClick={resetState}>推しログ</h1>
                         <div className="flex gap-2">
-                            <button onClick={() => setView('cs')} className="text-[10px] bg-white border px-3 py-2 rounded-full shadow-sm">👤 キャラ別</button>
-                            <button onClick={() => {setEdit(null); setView('add');}} className="text-[10px] bg-orange-700 text-white px-3 py-2 rounded-full font-bold">＋ 追加</button>
+                            <button onClick={() => setView('cs')} className="text-[11px] font-bold text-orange-700 px-4 py-2 rounded-full bg-orange-50">👤 分析</button>
+                            <button onClick={() => {setEditItem(null); setView('add');}} className="text-[11px] bg-orange-700 text-white px-5 py-2 rounded-full font-bold shadow-md shadow-orange-700/20">＋ 追加</button>
                         </div>
                     </header>
 
-                    <main className="p-4 max-w-xl mx-auto">
+                    <main className="p-5 max-w-lg mx-auto">
                         {view === 'home' && (
                             <div>
-                                <div className="flex gap-2 overflow-x-auto mb-6 no-scrollbar">
-                                    {cats.map(c => <button key={c} onClick={() => setCat(c)} className={`px-4 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${cat === c ? 'bg-orange-700 text-white' : 'bg-white text-gray-500'}`}>{c}</button>)}
+                                <div className="flex gap-2 overflow-x-auto mb-6 no-scrollbar pb-1">
+                                    {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${activeCat === c ? 'bg-orange-800 text-white shadow-sm' : 'bg-white text-orange-400 border border-orange-50'}`}>{c}</button>)}
                                 </div>
-                                <div className="grid gap-4">
-                                    {(cat === "すべて" ? animes : animes.filter(a => a.cat === cat)).map((a, i) => (
-                                        <div key={a.id} className="card relative active:scale-[0.98] transition-transform">
+                                <div className="grid gap-5">
+                                    {(activeCat === "すべて" ? animes : animes.filter(a => a.cat === activeCat)).map((a, i) => (
+                                        <div key={a.id} className="card relative overflow-hidden transition-all active:scale-[0.98]">
                                             <div onClick={() => { setSelId(a.id); setView('det'); }}>
-                                                {a.img && <img src={a.img} className="w-full h-48 object-cover" />}
-                                                <div className="p-4">
+                                                {a.img && <img src={a.img} className="w-full h-52 object-cover" />}
+                                                <div className="p-5">
                                                     <div className="flex justify-between items-center mb-1">
-                                                        <span className="text-[10px] font-bold text-orange-700 px-2 py-0.5 bg-orange-50 rounded">RANK {i+1}</span>
-                                                        <span className="text-[10px] text-gray-400">{a.cat}</span>
+                                                        <span className="text-[10px] font-black text-orange-800/40 uppercase tracking-widest">#{i+1} {a.cat}</span>
+                                                        <span className="text-[10px] text-gray-300">{(a.charas || []).length}人</span>
                                                     </div>
-                                                    <h2 className="font-bold text-lg">{a.title}</h2>
+                                                    <h2 className="font-bold text-xl text-gray-800">{a.title}</h2>
                                                 </div>
                                             </div>
-                                            <div className="absolute top-2 right-2 flex gap-1">
-                                                <button onClick={() => setAnimes(mv(animes, i, -1))} className="bg-white/90 w-8 h-8 rounded-full shadow-sm flex items-center justify-center text-xs">▲</button>
-                                                <button onClick={() => setAnimes(mv(animes, i, 1))} className="bg-white/90 w-8 h-8 rounded-full shadow-sm flex items-center justify-center text-xs">▼</button>
-                                                <button onClick={() => {setEdit(a); setImg(a.img); setView('add');}} className="bg-white/90 w-8 h-8 rounded-full shadow-sm flex items-center justify-center text-xs">✎</button>
+                                            <div className="absolute top-3 right-3 flex gap-2">
+                                                <button onClick={() => setAnimes(moveItem(animes, i, -1))} className="bg-white/95 w-8 h-8 rounded-full shadow-sm flex items-center justify-center text-xs">▲</button>
+                                                <button onClick={() => setAnimes(moveItem(animes, i, 1))} className="bg-white/95 w-8 h-8 rounded-full shadow-sm flex items-center justify-center text-xs">▼</button>
+                                                <button onClick={() => {setEditItem(a); setTempImg(a.img); setView('add');}} className="bg-orange-700/90 text-white w-8 h-8 rounded-full shadow-sm flex items-center justify-center text-xs">✎</button>
                                             </div>
                                         </div>
                                     ))}
+                                    {animes.length === 0 && <div className="text-center py-20 text-orange-200 font-bold">作品を追加して始めよう</div>}
                                 </div>
                             </div>
                         )}
 
-                        {view === 'cs' && (
+                        {view === 'det' && animes.find(a => a.id === selId) && (
                             <div>
-                                <h2 className="font-bold mb-6 border-l-4 border-orange-700 pl-3">全キャラまとめ</h2>
-                                <div className="grid grid-cols-2 gap-3">
-                                    {allC.map(c => (
-                                        <div key={c.id} className="card p-4 text-center">
-                                            <div className="w-20 h-20 mx-auto rounded-full overflow-hidden mb-3 ring-4 ring-orange-50">{c.img ? <img src={c.img} className="w-full h-full object-cover" /> : <div className="bg-gray-100 h-full flex items-center justify-center">👤</div>}</div>
-                                            <div className="text-[9px] font-bold text-orange-600 mb-1">{c.tag}</div>
-                                            <div className="font-bold text-sm truncate">{c.name}</div>
-                                            <div className="text-[10px] text-gray-400 truncate mt-1">{c.aT}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {view === 'det' && (
-                            <div>
-                                <button onClick={goHome} className="text-sm text-gray-400 mb-4 flex items-center">← 戻る</button>
+                                <button onClick={resetState} className="text-xs font-bold text-orange-300 mb-6 flex items-center gap-1">← もどる</button>
                                 {animes.filter(a => a.id === selId).map(a => (
                                     <div key={a.id}>
-                                        <div className="card p-6 mb-8 border-t-4 border-orange-700">
-                                            <h2 className="font-bold text-2xl mb-4">{a.title}</h2>
-                                            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{a.memo}</p>
+                                        <div className="card p-6 mb-8 bg-gradient-to-br from-white to-orange-50/30">
+                                            <h2 className="font-bold text-2xl text-gray-800 mb-2">{a.title}</h2>
+                                            <p className="text-sm text-orange-900/60 leading-relaxed whitespace-pre-wrap">{a.memo}</p>
                                         </div>
-                                        <h3 className="font-bold mb-4 flex items-center gap-2">🏆 推しキャラ順位</h3>
-                                        <div className="grid gap-3">
+                                        <h3 className="font-bold mb-5 flex items-center gap-2 text-gray-400 text-sm">推しキャラ一覧</h3>
+                                        <div className="grid gap-4">
                                             {(a.charas || []).map((c, ci) => (
-                                                <div key={c.id} className="card p-3 flex gap-4 items-center relative">
-                                                    <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-50 flex-shrink-0">{c.img ? <img src={c.img} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full">👤</div>}</div>
-                                                    <div className="flex-1">
-                                                        <div className="text-[9px] font-bold text-orange-700">#{ci+1} / {c.tag}</div>
-                                                        <div className="font-bold">{c.name}</div>
+                                                <div key={c.id} className="card p-3 flex gap-4 items-center relative border-none shadow-sm">
+                                                    <div className="w-16 h-16 rounded-2xl overflow-hidden bg-orange-50 flex-shrink-0 shadow-inner">{c.img ? <img src={c.img} className="w-full h-full object-cover" /> : <div className="h-full flex items-center justify-center text-xl">👤</div>}</div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-[10px] font-black text-orange-700/50 uppercase tracking-tighter">Rank {ci+1} / {c.tag}</div>
+                                                        <div className="font-bold text-gray-800 truncate text-lg">{c.name}</div>
                                                     </div>
-                                                    <div className="flex flex-col gap-1">
-                                                        <button onClick={() => {const nc = mv(a.charas, ci, -1); setAnimes(animes.map(an => an.id === a.id ? {...an, charas: nc} : an))}} className="p-1 text-gray-300">▲</button>
-                                                        <button onClick={() => {const nc = mv(a.charas, ci, 1); setAnimes(animes.map(an => an.id === a.id ? {...an, charas: nc} : an))}} className="p-1 text-gray-300">▼</button>
+                                                    <div className="flex flex-col gap-1 pr-2">
+                                                        <button onClick={() => {const nc = moveItem(a.charas, ci, -1); setAnimes(animes.map(an => an.id === a.id ? {...an, charas: nc} : an))}} className="text-orange-200">▲</button>
+                                                        <button onClick={() => {const nc = moveItem(a.charas, ci, 1); setAnimes(animes.map(an => an.id === a.id ? {...an, charas: nc} : an))}} className="text-orange-200">▼</button>
                                                     </div>
-                                                    <button onClick={() => {if(confirm("削除しますか？")) setAnimes(animes.map(an => an.id === a.id ? {...an, charas: an.charas.filter(cc => cc.id !== c.id)} : an))} } className="absolute -top-1 -right-1 bg-red-100 text-red-400 w-5 h-5 rounded-full text-xs flex items-center justify-center">×</button>
+                                                    <button onClick={() => {if(confirm("削除しますか？")) setAnimes(animes.map(an => an.id === a.id ? {...an, charas: an.charas.filter(cc => cc.id !== c.id)} : an))} } className="absolute -top-1 -right-1 bg-red-50 text-red-200 w-6 h-6 rounded-full text-xs flex items-center justify-center border border-red-50">×</button>
                                                 </div>
                                             ))}
                                         </div>
-                                        <form onSubmit={sCha} className="mt-8 card p-6 border-2 border-dashed border-orange-100">
-                                            <p className="text-xs font-bold text-center mb-4 text-orange-800">推しキャラを追加</p>
-                                            <input name="n" required placeholder="キャラ名" className="w-full mb-3 p-3 bg-gray-50 rounded-xl outline-none text-sm" />
-                                            <input name="g" placeholder="カテゴリー（癒やし、クールなど）" className="w-full mb-4 p-3 bg-gray-50 rounded-xl outline-none text-sm" />
-                                            <div className="flex justify-between items-center gap-2">
-                                                <input type="file" accept="image/*" onChange={hImg} className="text-[10px] overflow-hidden" />
-                                                <button disabled={loading} className="bg-orange-700 text-white px-6 py-2 rounded-full text-xs font-bold disabled:bg-gray-400">{loading ? "処理中..." : "追加"}</button>
+                                        <form onSubmit={saveChara} className="mt-10 card p-6 border-2 border-dashed border-orange-100 shadow-none">
+                                            <p className="text-[10px] font-black text-center mb-5 text-orange-800 uppercase tracking-widest">キャラ追加</p>
+                                            <input name="n" required placeholder="キャラ名" className="w-full mb-3 p-4 bg-orange-50/50 rounded-2xl outline-none text-sm font-bold" />
+                                            <input name="g" placeholder="特徴・好きポイント" className="w-full mb-5 p-4 bg-orange-50/50 rounded-2xl outline-none text-sm" />
+                                            <div className="flex justify-between items-center">
+                                                <input type="file" accept="image/*" onChange={handleFileChange} className="text-[10px] w-2/3" />
+                                                <button disabled={isProcessing} className="bg-orange-800 text-white px-6 py-3 rounded-2xl text-xs font-bold disabled:bg-gray-200">{isProcessing ? "..." : "追加"}</button>
                                             </div>
-                                            {img && <img src={img} className="mt-4 w-16 h-16 object-cover rounded-full mx-auto ring-2 ring-orange-100" />}
+                                            {tempImg && <img src={tempImg} className="mt-5 w-20 h-20 object-cover rounded-2xl mx-auto shadow-md" />}
                                         </form>
                                     </div>
                                 ))}
@@ -200,33 +203,47 @@
                         )}
 
                         {view === 'add' && (
-                            <div className="card p-6">
-                                <h2 className="font-bold text-xl mb-8 text-center">{edit ? "内容を書き換える" : "新しい作品"}</h2>
-                                <form onSubmit={sAni} className="grid gap-6">
+                            <div className="card p-7">
+                                <h2 className="font-bold text-xl mb-8 text-center text-gray-800">{editItem ? "作品を編集する" : "新しい推し作品"}</h2>
+                                <form onSubmit={saveAnime} className="grid gap-6">
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-bold text-gray-400 ml-1">作品タイトル</label>
-                                        <input name="t" defaultValue={edit?.title} required className="w-full p-3 bg-gray-50 rounded-2xl outline-none border-2 border-transparent focus:border-orange-200" />
+                                        <label className="text-[10px] font-black text-orange-900/30 ml-2 uppercase tracking-widest">作品名</label>
+                                        <input name="t" defaultValue={editItem?.title} required className="w-full p-4 bg-gray-50 rounded-2xl outline-none border-2 border-transparent focus:border-orange-100 font-bold" />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-bold text-gray-400 ml-1">カテゴリー（2026春、殿堂入りなど）</label>
-                                        <input name="c" defaultValue={edit?.cat} className="w-full p-3 bg-gray-50 rounded-2xl outline-none border-2 border-transparent focus:border-orange-200" />
+                                        <label className="text-[10px] font-black text-orange-900/30 ml-2 uppercase tracking-widest">カテゴリー (殿堂入り等)</label>
+                                        <input name="c" defaultValue={editItem?.cat} className="w-full p-4 bg-gray-50 rounded-2xl outline-none border-2 border-transparent focus:border-orange-100 text-sm" />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-bold text-gray-400 ml-1">感想・分析メモ</label>
-                                        <textarea name="m" defaultValue={edit?.memo} className="w-full p-3 bg-gray-50 rounded-2xl h-32 outline-none border-2 border-transparent focus:border-orange-200 text-sm" />
+                                        <label className="text-[10px] font-black text-orange-900/30 ml-2 uppercase tracking-widest">作品の感想・メモ</label>
+                                        <textarea name="m" defaultValue={editItem?.memo} className="w-full p-4 bg-gray-50 rounded-2xl h-32 outline-none border-2 border-transparent focus:border-orange-100 text-sm leading-relaxed" />
                                     </div>
-                                    <div className="bg-orange-50/50 p-6 rounded-3xl text-center border-2 border-dashed border-orange-100">
-                                        <input type="file" accept="image/*" onChange={hImg} className="text-xs w-full" />
-                                        {img && <div className="mt-4 relative inline-block">
-                                            <img src={img} className="w-full h-44 object-cover rounded-2xl shadow-md" />
-                                            <button type="button" onClick={() => setImg("")} className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full text-xs">×</button>
+                                    <div className="bg-orange-50/30 p-6 rounded-3xl text-center border-2 border-dashed border-orange-100">
+                                        <input type="file" accept="image/*" onChange={handleFileChange} className="text-xs w-full" />
+                                        {tempImg && <div className="mt-4 relative">
+                                            <img src={tempImg} className="w-full h-48 object-cover rounded-2xl shadow-sm" />
+                                            <button type="button" onClick={() => setTempImg("")} className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full text-xs">×</button>
                                         </div>}
                                     </div>
-                                    <button disabled={loading} className="bg-orange-700 text-white py-4 rounded-2xl font-bold shadow-lg disabled:bg-gray-400">
-                                        {loading ? "画像を圧縮中..." : (edit ? "更新を保存" : "作品を登録する")}
+                                    <button disabled={isProcessing} className="bg-orange-800 text-white py-5 rounded-3xl font-bold shadow-xl shadow-orange-900/20 disabled:bg-gray-200">
+                                        {isProcessing ? "画像を圧縮中..." : (editItem ? "変更を保存する" : "作品を登録する")}
                                     </button>
-                                    {edit && <button type="button" onClick={() => {if(confirm("この作品を削除しますか？")){setAnimes(animes.filter(a=>a.id!==edit.id)); goHome();}}} className="text-red-400 text-xs mt-2">この作品を完全に削除</button>}
+                                    {editItem && <button type="button" onClick={() => {if(confirm("この作品を完全に消しますか？")){setAnimes(animes.filter(a=>a.id!==editItem.id)); resetState();}}} className="text-red-300 text-[11px] font-bold mt-2">この作品を削除する</button>}
                                 </form>
+                            </div>
+                        )}
+
+                        {view === 'cs' && (
+                            <div className="grid grid-cols-2 gap-4 animate-in fade-in duration-500">
+                                <h2 className="col-span-2 font-bold mb-4 border-l-4 border-orange-800 pl-3">全作品・全キャラ分析</h2>
+                                {animes.flatMap(a => (a.charas || []).map(c => ({...c, aT: a.title, aI: a.id}))).map(c => (
+                                    <div key={c.id} className="card p-5 text-center relative shadow-sm border-none" onClick={() => {setSelId(c.aI); setView('det');}}>
+                                        <div className="w-20 h-20 mx-auto rounded-3xl overflow-hidden mb-4 shadow-md">{c.img ? <img src={c.img} className="w-full h-full object-cover" /> : <div className="bg-orange-50 h-full flex items-center justify-center">👤</div>}</div>
+                                        <div className="text-[9px] font-black text-orange-600 mb-1 tracking-tighter uppercase">{c.tag}</div>
+                                        <div className="font-bold text-sm text-gray-800 truncate mb-1">{c.name}</div>
+                                        <div className="text-[9px] text-gray-400 truncate">{c.aT}</div>
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </main>
