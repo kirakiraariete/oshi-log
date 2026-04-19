@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>推しログ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --beige: #F5EFE6;
+            --terra: #C4704A;
+            --text-dark: #3D2B1F;
+        }
+        body { 
+            font-family: 'Noto Sans JP', sans-serif; 
+            background: var(--beige); 
+            color: var(--text-dark); 
+        }
+        .serif { font-family: 'Noto Serif JP', serif; }
+        .card-shadow { box-shadow: 0 4px 20px rgba(107, 79, 58, 0.12); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function App() {
+            // データ保存用（ブラウザに保存されるようにしています）
+            const [animes, setAnimes] = useState(() => {
+                const saved = localStorage.getItem('oshi-log-anime');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            const [view, setView] = useState('home'); // home or add
+
+            // データが変わるたびに保存
+            useEffect(() => {
+                localStorage.setItem('oshi-log-anime', JSON.stringify(animes));
+            }, [animes]);
+
+            // アニメ追加関数
+            const addAnime = (e) => {
+                e.preventDefault();
+                const title = e.target.title.value;
+                const memo = e.target.memo.value;
+                const image = e.target.image_data.value;
+                
+                const newAnime = {
+                    id: Date.now(),
+                    title,
+                    memo,
+                    image,
+                    rank: animes.length + 1,
+                    charas: []
+                };
+                
+                setAnimes([newAnime, ...animes]);
+                setView('home');
+            };
+
+            // 画像を読み込む関数
+            const handleImage = (e, callback) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onloadend = () => callback(reader.result);
+                if (file) reader.readAsDataURL(file);
+            };
+
+            const [tempImg, setTempImg] = useState("");
+
+            return (
+                <div className="min-h-screen pb-20">
+                    <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex justify-between items-center">
+                        <h1 className="serif text-xl font-bold text-[#C4704A]">推し<span>ログ</span></h1>
+                        <button 
+                            onClick={() => setView(view === 'home' ? 'add' : 'home')}
+                            className="bg-[#C4704A] text-white px-4 py-2 rounded-full text-sm font-medium"
+                        >
+                            {view === 'home' ? '＋ 作品を追加' : '戻る'}
+                        </button>
+                    </header>
+
+                    <main className="p-4 max-w-2xl mx-auto">
+                        {view === 'home' ? (
+                            <div className="grid gap-6">
+                                {animes.length === 0 && (
+                                    <p className="text-center text-gray-400 mt-20">作品がまだありません</p>
+                                )}
+                                {animes.map((anime, index) => (
+                                    <div key={anime.id} className="bg-white rounded-3xl overflow-hidden card-shadow">
+                                        {anime.image && <img src={anime.image} className="w-full h-48 object-cover" />}
+                                        <div className="p-5">
+                                            <div className="flex justify-between items-start">
+                                                <span className="serif text-[#C4704A] font-bold text-sm">#{index + 1}位</span>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => {
+                                                        const newAnimes = [...animes];
+                                                        if (index > 0) {
+                                                            [newAnimes[index], newAnimes[index-1]] = [newAnimes[index-1], newAnimes[index]];
+                                                            setAnimes(newAnimes);
+                                                        }
+                                                    }} className="text-gray-400">▲</button>
+                                                    <button onClick={() => {
+                                                        const newAnimes = [...animes];
+                                                        if (index < animes.length - 1) {
+                                                            [newAnimes[index], newAnimes[index+1]] = [newAnimes[index+1], newAnimes[index]];
+                                                            setAnimes(newAnimes);
+                                                        }
+                                                    }} className="text-gray-400">▼</button>
+                                                </div>
+                                            </div>
+                                            <h2 className="serif text-lg font-bold mt-1">{anime.title}</h2>
+                                            <p className="text-sm text-gray-500 mt-2 line-clamp-3">{anime.memo}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <form onSubmit={addAnime} className="bg-white p-6 rounded-3xl card-shadow">
+                                <h2 className="serif text-lg mb-4">新しい作品を記録</h2>
+                                <div className="grid gap-4">
+                                    <div>
+                                        <label className="text-xs text-gray-400 block mb-1">作品名</label>
+                                        <input name="title" required className="w-full border-b p-2 outline-none focus:border-[#C4704A]" placeholder="アニメのタイトル" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400 block mb-1">感想・メモ</label>
+                                        <textarea name="memo" className="w-full border-b p-2 outline-none focus:border-[#C4704A]" placeholder="ここが好き！" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400 block mb-1">自作イラスト・画像</label>
+                                        <input type="file" accept="image/*" onChange={(e) => handleImage(e, setTempImg)} className="text-sm" />
+                                        <input type="hidden" name="image_data" value={tempImg} />
+                                        {tempImg && <img src={tempImg} className="mt-2 w-20 h-20 object-cover rounded-lg" />}
+                                    </div>
+                                    <button type="submit" className="bg-[#C4704A] text-white py-3 rounded-xl mt-4 font-bold">保存する</button>
+                                </div>
+                            </form>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
