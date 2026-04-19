@@ -10,18 +10,13 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        :root {
-            --beige: #F5EFE6;
-            --terra: #C4704A;
-            --text-dark: #3D2B1F;
-        }
-        body { 
-            font-family: 'Noto Sans JP', sans-serif; 
-            background: var(--beige); 
-            color: var(--text-dark); 
-        }
+        :root { --beige: #F5EFE6; --terra: #C4704A; --text-dark: #3D2B1F; }
+        body { font-family: 'Noto Sans JP', sans-serif; background: var(--beige); color: var(--text-dark); }
         .serif { font-family: 'Noto Serif JP', serif; }
         .card-shadow { box-shadow: 0 4px 20px rgba(107, 79, 58, 0.12); }
+        input[type="file"]::file-selector-button {
+            background: #C4704A; color: white; border: none; padding: 4px 12px; border-radius: 99px; font-size: 10px; cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -31,115 +26,174 @@
         const { useState, useEffect } = React;
 
         function App() {
-            // データ保存用（ブラウザに保存されるようにしています）
             const [animes, setAnimes] = useState(() => {
-                const saved = localStorage.getItem('oshi-log-anime');
+                const saved = localStorage.getItem('oshi-log-data-v2');
                 return saved ? JSON.parse(saved) : [];
             });
+            const [view, setView] = useState('home'); 
+            const [selectedId, setSelectedId] = useState(null);
+            const [tempImg, setTempImg] = useState("");
 
-            const [view, setView] = useState('home'); // home or add
-
-            // データが変わるたびに保存
             useEffect(() => {
-                localStorage.setItem('oshi-log-anime', JSON.stringify(animes));
+                localStorage.setItem('oshi-log-data-v2', JSON.stringify(animes));
             }, [animes]);
 
-            // アニメ追加関数
+            const handleImage = (e, callback) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onloadend = () => callback(reader.result);
+                reader.readAsDataURL(file);
+            };
+
             const addAnime = (e) => {
                 e.preventDefault();
                 const title = e.target.title.value;
                 const memo = e.target.memo.value;
-                const image = e.target.image_data.value;
-                
-                const newAnime = {
-                    id: Date.now(),
-                    title,
-                    memo,
-                    image,
-                    rank: animes.length + 1,
-                    charas: []
-                };
-                
-                setAnimes([newAnime, ...animes]);
-                setView('home');
+                setAnimes([{ id: Date.now(), title, memo, image: tempImg, charas: [] }, ...animes]);
+                setTempImg(""); setView('home');
             };
 
-            // 画像を読み込む関数
-            const handleImage = (e, callback) => {
-                const file = e.target.files[0];
-                const reader = new FileReader();
-                reader.onloadend = () => callback(reader.result);
-                if (file) reader.readAsDataURL(file);
+            const addChara = (e) => {
+                e.preventDefault();
+                const name = e.target.name.value;
+                const trait = e.target.trait.value;
+                const newAnimes = animes.map(a => {
+                    if (a.id === selectedId) {
+                        return { ...a, charas: [...a.charas, { id: Date.now(), name, trait, image: tempImg }] };
+                    }
+                    return a;
+                });
+                setAnimes(newAnimes); setTempImg(""); e.target.reset();
             };
 
-            const [tempImg, setTempImg] = useState("");
+            const moveItem = (index, direction) => {
+                const newAnimes = [...animes];
+                const targetIndex = index + direction;
+                if (targetIndex < 0 || targetIndex >= animes.length) return;
+                [newAnimes[index], newAnimes[targetIndex]] = [newAnimes[targetIndex], newAnimes[index]];
+                setAnimes(newAnimes);
+            };
+
+            const moveChara = (animeId, charaIndex, direction) => {
+                const newAnimes = animes.map(a => {
+                    if (a.id === animeId) {
+                        const newCharas = [...a.charas];
+                        const targetIdx = charaIndex + direction;
+                        if (targetIdx < 0 || targetIdx >= newCharas.length) return a;
+                        [newCharas[charaIndex], newCharas[targetIdx]] = [newCharas[targetIdx], newCharas[charaIndex]];
+                        return { ...a, charas: newCharas };
+                    }
+                    return a;
+                });
+                setAnimes(newAnimes);
+            };
+
+            const deleteItem = (id) => { if(confirm("消去しますか？")) setAnimes(animes.filter(a => a.id !== id)); };
+
+            const selectedAnime = animes.find(a => a.id === selectedId);
 
             return (
                 <div className="min-h-screen pb-20">
                     <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex justify-between items-center">
-                        <h1 className="serif text-xl font-bold text-[#C4704A]">推し<span>ログ</span></h1>
-                        <button 
-                            onClick={() => setView(view === 'home' ? 'add' : 'home')}
-                            className="bg-[#C4704A] text-white px-4 py-2 rounded-full text-sm font-medium"
-                        >
-                            {view === 'home' ? '＋ 作品を追加' : '戻る'}
-                        </button>
+                        <h1 className="serif text-xl font-bold text-[#C4704A]" onClick={() => setView('home')}>推し<span>ログ</span></h1>
+                        {view === 'home' && <button onClick={() => setView('add')} className="bg-[#C4704A] text-white px-4 py-2 rounded-full text-sm font-medium">＋ 作品追加</button>}
+                        {view !== 'home' && <button onClick={() => setView('home')} className="text-gray-400 text-sm">戻る</button>}
                     </header>
 
                     <main className="p-4 max-w-2xl mx-auto">
-                        {view === 'home' ? (
+                        {view === 'home' && (
                             <div className="grid gap-6">
-                                {animes.length === 0 && (
-                                    <p className="text-center text-gray-400 mt-20">作品がまだありません</p>
-                                )}
+                                {animes.length === 0 && <p className="text-center text-gray-400 mt-20">作品を登録して自分だけの雑誌を作ろう</p>}
                                 {animes.map((anime, index) => (
-                                    <div key={anime.id} className="bg-white rounded-3xl overflow-hidden card-shadow">
-                                        {anime.image && <img src={anime.image} className="w-full h-48 object-cover" />}
+                                    <div key={anime.id} className="bg-white rounded-3xl overflow-hidden card-shadow" onClick={() => { setSelectedId(anime.id); setView('detail'); }}>
+                                        {anime.image && <img src={anime.image} className="w-full h-52 object-cover" />}
                                         <div className="p-5">
-                                            <div className="flex justify-between items-start">
-                                                <span className="serif text-[#C4704A] font-bold text-sm">#{index + 1}位</span>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => {
-                                                        const newAnimes = [...animes];
-                                                        if (index > 0) {
-                                                            [newAnimes[index], newAnimes[index-1]] = [newAnimes[index-1], newAnimes[index]];
-                                                            setAnimes(newAnimes);
-                                                        }
-                                                    }} className="text-gray-400">▲</button>
-                                                    <button onClick={() => {
-                                                        const newAnimes = [...animes];
-                                                        if (index < animes.length - 1) {
-                                                            [newAnimes[index], newAnimes[index+1]] = [newAnimes[index+1], newAnimes[index]];
-                                                            setAnimes(newAnimes);
-                                                        }
-                                                    }} className="text-gray-400">▼</button>
+                                            <div className="flex justify-between items-center">
+                                                <span className="serif text-[#C4704A] font-bold text-xs">RANK {index + 1}</span>
+                                                <div className="flex gap-4 px-2" onClick={e => e.stopPropagation()}>
+                                                    <button onClick={() => moveItem(index, -1)} className="text-[#A89080]">▲</button>
+                                                    <button onClick={() => moveItem(index, 1)} className="text-[#A89080]">▼</button>
+                                                    <button onClick={() => deleteItem(anime.id)} className="text-xs text-gray-300 ml-2">削除</button>
                                                 </div>
                                             </div>
                                             <h2 className="serif text-lg font-bold mt-1">{anime.title}</h2>
-                                            <p className="text-sm text-gray-500 mt-2 line-clamp-3">{anime.memo}</p>
+                                            <p className="text-xs text-gray-500 mt-2 line-clamp-2">{anime.memo}</p>
+                                            <div className="mt-3 flex gap-1">
+                                                {anime.charas.map(c => <div key={c.id} className="w-6 h-6 rounded-full bg-[#EDE3D5] overflow-hidden border border-white shadow-sm">
+                                                    {c.image ? <img src={c.image} className="w-full h-full object-cover" /> : <div className="text-[8px] flex items-center justify-center h-full">👤</div>}
+                                                </div>)}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                        ) : (
-                            <form onSubmit={addAnime} className="bg-white p-6 rounded-3xl card-shadow">
-                                <h2 className="serif text-lg mb-4">新しい作品を記録</h2>
+                        )}
+
+                        {view === 'detail' && selectedAnime && (
+                            <div className="animate-in fade-in duration-300">
+                                <div className="bg-white rounded-3xl overflow-hidden card-shadow mb-6">
+                                    {selectedAnime.image && <img src={selectedAnime.image} className="w-full h-64 object-cover" />}
+                                    <div className="p-6">
+                                        <h2 className="serif text-2xl font-bold text-[#3D2B1F]">{selectedAnime.title}</h2>
+                                        <p className="text-sm text-[#7A6050] mt-4 leading-relaxed whitespace-pre-wrap">{selectedAnime.memo}</p>
+                                    </div>
+                                </div>
+
+                                <h3 className="serif text-lg font-bold mb-4 flex items-center gap-2">⭐ 推しキャラ <span className="text-xs font-normal text-gray-400">順番を並び替えられます</span></h3>
                                 <div className="grid gap-4">
+                                    {selectedAnime.charas.map((c, idx) => (
+                                        <div key={c.id} className="bg-white p-3 rounded-2xl flex gap-4 items-center card-shadow">
+                                            <div className="w-16 h-16 rounded-xl bg-gray-100 overflow-hidden flex-shrink-0 shadow-inner">
+                                                {c.image ? <img src={c.image} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-2xl">👤</div>}
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="serif font-bold text-[#C4704A] text-xs">#{idx + 1}</div>
+                                                    <div className="flex gap-3">
+                                                        <button onClick={() => moveChara(selectedAnime.id, idx, -1)} className="text-gray-300 text-xs">▲</button>
+                                                        <button onClick={() => moveChara(selectedAnime.id, idx, 1)} className="text-gray-300 text-xs">▼</button>
+                                                    </div>
+                                                </div>
+                                                <div className="font-bold text-sm">{c.name}</div>
+                                                <div className="text-[10px] text-gray-500 mt-1">{c.trait}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    
+                                    <form onSubmit={addChara} className="bg-[#FDFAF6] border-2 border-dashed border-[#EDE3D5] p-4 rounded-2xl mt-4">
+                                        <p className="text-[10px] text-[#A89080] mb-3 text-center serif font-bold">— 新しい推しを登録 —</p>
+                                        <input name="name" required placeholder="キャラ名" className="w-full bg-transparent border-b border-[#EDE3D5] p-2 text-sm outline-none mb-3" />
+                                        <input name="trait" placeholder="特徴・好きポイント" className="w-full bg-transparent border-b border-[#EDE3D5] p-2 text-sm outline-none mb-3" />
+                                        <div className="flex items-center justify-between">
+                                            <input type="file" accept="image/*" onChange={(e) => handleImage(e, setTempImg)} className="text-[10px] w-1/2" />
+                                            <button type="submit" className="bg-[#7A8C6E] text-white px-4 py-1 rounded-full text-xs font-bold">キャラ追加</button>
+                                        </div>
+                                        {tempImg && <img src={tempImg} className="mt-3 w-12 h-12 object-cover rounded-lg mx-auto border" />}
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'add' && (
+                            <form onSubmit={addAnime} className="bg-white p-8 rounded-3xl card-shadow animate-in slide-in-from-bottom-4 duration-300">
+                                <h2 className="serif text-xl font-bold mb-6 text-center text-[#6B4F3A]">作品をコレクションに追加</h2>
+                                <div className="grid gap-6">
                                     <div>
-                                        <label className="text-xs text-gray-400 block mb-1">作品名</label>
-                                        <input name="title" required className="w-full border-b p-2 outline-none focus:border-[#C4704A]" placeholder="アニメのタイトル" />
+                                        <label className="text-[10px] text-[#A89080] font-bold block mb-2 serif">TITLE</label>
+                                        <input name="title" required className="w-full border-b-2 border-[#F5EFE6] p-2 outline-none focus:border-[#C4704A] text-lg" placeholder="作品名を入力..." />
                                     </div>
                                     <div>
-                                        <label className="text-xs text-gray-400 block mb-1">感想・メモ</label>
-                                        <textarea name="memo" className="w-full border-b p-2 outline-none focus:border-[#C4704A]" placeholder="ここが好き！" />
+                                        <label className="text-[10px] text-[#A89080] font-bold block mb-2 serif">MEMO</label>
+                                        <textarea name="memo" className="w-full border-2 border-[#F5EFE6] p-3 rounded-xl outline-none focus:border-[#C4704A] text-sm h-32" placeholder="あなたの感想を自由に..." />
                                     </div>
-                                    <div>
-                                        <label className="text-xs text-gray-400 block mb-1">自作イラスト・画像</label>
-                                        <input type="file" accept="image/*" onChange={(e) => handleImage(e, setTempImg)} className="text-sm" />
-                                        <input type="hidden" name="image_data" value={tempImg} />
-                                        {tempImg && <img src={tempImg} className="mt-2 w-20 h-20 object-cover rounded-lg" />}
+                                    <div className="bg-[#FDFAF6] p-4 rounded-2xl text-center border border-[#EDE3D5]">
+                                        <label className="text-[10px] text-[#A89080] font-bold block mb-2 serif">ARTWORK / IMAGE</label>
+                                        <input type="file" accept="image/*" onChange={(e) => handleImage(e, setTempImg)} className="text-xs mx-auto" />
+                                        {tempImg && <img src={tempImg} className="mt-4 w-full h-40 object-cover rounded-xl border-2 border-white shadow-sm" />}
+                                        <p className="text-[9px] text-gray-400 mt-2">※自作イラストなどをアップロードできます</p>
                                     </div>
-                                    <button type="submit" className="bg-[#C4704A] text-white py-3 rounded-xl mt-4 font-bold">保存する</button>
+                                    <button type="submit" className="bg-[#C4704A] text-white py-4 rounded-2xl mt-4 font-bold shadow-lg shadow-[#C4704A]/20 active:scale-95 transition-all">この内容で保存する</button>
                                 </div>
                             </form>
                         )}
@@ -147,7 +201,6 @@
                 </div>
             );
         }
-
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
