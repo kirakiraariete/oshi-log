@@ -3,13 +3,11 @@ import { kv } from '@vercel/kv';
 export default async function handler(request, response) {
   try {
     if (request.method === 'GET') {
-      // 金庫からデータを取り出す
-      const data = await kv.get('user_oshi_data');
+      const data = await kv.get('user_oshi_data_final');
       return response.status(200).json(data || []);
     }
     if (request.method === 'POST') {
-      // 金庫にデータを保存する
-      await kv.set('user_oshi_data', request.body);
+      await kv.set('user_oshi_data_final', request.body);
       return response.status(200).json({ status: 'saved' });
     }
   } catch (error) {
