@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>推しログ Professional</title>
+    <title>推しログ Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/babel-standalone/7.23.2/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #FAF9F6; color: #2D241E; font-family: -apple-system, sans-serif; }
-        .card { background: white; border-radius: 1.25rem; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid #F1EDE9; }
-        .rank-num { font-family: 'Georgia', serif; font-style: italic; color: #D1C4BA; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
+        body { background: #FAF9F6; color: #2D241E; font-family: sans-serif; }
+        .card { background: white; border-radius: 1rem; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .rank-num { font-family: serif; font-style: italic; color: #D1C4BA; }
     </style>
 </head>
 <body>
@@ -23,152 +22,122 @@
         function App() {
             const [data, setData] = useState([]);
             const [loading, setLoading] = useState(true);
-            const [view, setView] = useState('home'); 
+            const [view, setView] = useState('home');
             const [activeId, setActiveId] = useState(null);
-            const [editTarget, setEditTarget] = useState(null);
-            const [filterCat, setFilterCat] = useState('すべて');
+            const [filter, setFilter] = useState('すべて');
 
-            // クラウド（KV）からデータを読み込む
             useEffect(() => {
-                fetch('/api/data').then(res => res.json()).then(res => {
-                    setData(res || []);
-                    setLoading(false);
-                }).catch(() => setLoading(false));
+                fetch('/api/data').then(r => r.json()).then(d => { setData(d || []); setLoading(false); });
             }, []);
 
-            // データが更新されたら自動でクラウドへ保存
             useEffect(() => {
-                if (!loading) {
-                    fetch('/api/data', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
-                    });
-                }
+                if (!loading) fetch('/api/data', { method: 'POST', body: JSON.stringify(data) });
             }, [data, loading]);
 
-            const categories = useMemo(() => ['すべて', ...new Set(data.map(item => item.category))].filter(Boolean), [data]);
-            const currentItem = data.find(item => item.id === activeId);
+            const cats = useMemo(() => ['すべて', ...new Set(data.map(i => i.category))].filter(Boolean), [data]);
+            const current = data.find(i => i.id === activeId);
 
-            const saveItem = (e) => {
-                e.preventDefault();
-                const fd = new FormData(e.target);
-                const newItem = {
-                    id: editTarget ? editTarget.id : Date.now(),
-                    title: fd.get('title'),
-                    category: fd.get('category') || '未分類',
-                    memo: fd.get('memo'),
-                    characters: editTarget ? editTarget.characters : []
-                };
-                if (editTarget) setData(data.map(d => d.id === editTarget.id ? newItem : d));
-                else setData([...data, newItem]);
-                setView('home'); setEditTarget(null);
-            };
-
-            // ランキングの順位を入れ替える関数
-            const moveRank = (list, i, dir) => {
+            const move = (list, i, d) => {
                 const n = [...list];
-                if (i + dir < 0 || i + dir >= n.length) return n;
-                [n[i], n[i+dir]] = [n[i+dir], n[i]];
+                if (i+d >= 0 && i+d < n.length) [n[i], n[i+d]] = [n[i+d], n[i]];
                 return n;
             };
 
-            if (loading) return <div className="h-screen flex items-center justify-center text-orange-200">読み込み中...</div>;
+            if (loading) return <div className="p-10 text-center">読み込み中...</div>;
 
             return (
-                <div className="max-w-md mx-auto min-h-screen pb-20">
-                    <header className="p-6 flex justify-between items-center sticky top-0 bg-[#FAF9F6] z-50">
-                        <h1 className="text-xl font-black text-orange-900" onClick={() => setView('home')}>推しログ Pro</h1>
-                        <button onClick={() => {setEditTarget(null); setView('add');}} className="bg-orange-900 text-white text-[10px] font-bold px-5 py-2.5 rounded-full shadow-lg">＋ 作品追加</button>
+                <div className="max-w-md mx-auto min-h-screen p-5 pb-20">
+                    <header className="flex justify-between items-center mb-6 sticky top-0 bg-[#FAF9F6] py-2 z-10">
+                        <h1 className="text-xl font-bold text-orange-900" onClick={() => setView('home')}>推しログ Pro</h1>
+                        <button onClick={() => setView('add')} className="bg-orange-900 text-white px-5 py-2 rounded-full text-xs font-bold shadow-lg">＋ 作品追加</button>
                     </header>
 
-                    <main className="p-5">
-                        {view === 'home' && (
-                            <div>
-                                {/* カテゴリ切り替え */}
-                                <div className="flex gap-2 overflow-x-auto pb-4 mb-4 no-scrollbar">
-                                    {categories.map(c => (
-                                        <button key={c} onClick={() => setFilterCat(c)} className={`px-4 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap transition ${filterCat === c ? 'bg-orange-900 text-white' : 'bg-white text-orange-300 border border-orange-100'}`}>{c}</button>
-                                    ))}
-                                </div>
-                                {/* 作品ランキング表示 */}
-                                <div className="space-y-4">
-                                    {data.filter(item => filterCat === 'すべて' || item.category === filterCat).map((item, index) => (
-                                        <div key={item.id} className="card p-5 flex items-center justify-between">
-                                            <div onClick={() => {setActiveId(item.id); setView('detail');}} className="flex-1">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="rank-num text-lg">#{index + 1}</span>
-                                                    <span className="text-[9px] font-bold text-orange-300 uppercase">{item.category}</span>
-                                                </div>
-                                                <h2 className="font-bold text-lg">{item.title}</h2>
+                    {view === 'home' && (
+                        <div>
+                            <div className="flex gap-2 overflow-x-auto mb-6 pb-2 no-scrollbar">
+                                {cats.map(c => (
+                                    <button key={c} onClick={() => setFilter(c)} className={`px-4 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap transition ${filter === c ? 'bg-orange-900 text-white' : 'bg-white border text-orange-300'}`}>{c}</button>
+                                ))}
+                            </div>
+                            <div className="space-y-4">
+                                {data.filter(i => filter === 'すべて' || i.category === filter).map((item, idx) => (
+                                    <div key={item.id} className="card p-5 flex justify-between items-center border border-orange-50">
+                                        <div onClick={() => {setActiveId(item.id); setView('det');}} className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="rank-num text-lg">#{idx+1}</span>
+                                                <span className="text-[9px] font-bold text-orange-300 uppercase">{item.category}</span>
                                             </div>
-                                            <div className="flex flex-col gap-2 ml-4">
-                                                <button onClick={() => setData(moveRank(data, index, -1))} className="text-gray-200 hover:text-orange-900 text-xl">▲</button>
-                                                <button onClick={() => {setEditTarget(item); setView('add');}} className="text-orange-100 text-[10px]">編集</button>
-                                                <button onClick={() => setData(moveRank(data, index, 1))} className="text-gray-200 hover:text-orange-900 text-xl">▼</button>
-                                            </div>
+                                            <div className="font-bold text-lg">{item.title}</div>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {view === 'detail' && currentItem && (
-                            <div>
-                                <button onClick={() => setView('home')} className="text-[10px] font-bold text-orange-200 mb-6 block uppercase tracking-widest">← Back</button>
-                                <div className="card p-6 mb-8 border-l-4 border-orange-900">
-                                    <h2 className="text-2xl font-bold mb-2">{currentItem.title}</h2>
-                                    <p className="text-sm text-gray-500 whitespace-pre-wrap leading-relaxed">{currentItem.memo}</p>
-                                </div>
-                                
-                                <h3 className="text-[10px] font-bold text-orange-900 uppercase tracking-widest mb-4">Character Ranking</h3>
-                                <div className="space-y-3">
-                                    {(currentItem.characters || []).map((ch, ci) => (
-                                        <div key={ch.id} className="card p-4 flex items-center justify-between">
-                                            <div className="flex items-center gap-4">
-                                                <span className="rank-num text-2xl opacity-30">#{ci + 1}</span>
-                                                <div className="font-bold">{ch.name}</div>
-                                            </div>
-                                            <div className="flex gap-4">
-                                                <button onClick={() => {
-                                                    const nc = moveRank(currentItem.characters, ci, -1);
-                                                    setData(data.map(d => d.id === currentItem.id ? {...d, characters: nc} : d));
-                                                }} className="text-gray-300">▲</button>
-                                                <button onClick={() => {
-                                                    const nc = moveRank(currentItem.characters, ci, 1);
-                                                    setData(data.map(d => d.id === currentItem.id ? {...d, characters: nc} : d));
-                                                }} className="text-gray-300">▼</button>
-                                            </div>
+                                        <div className="flex flex-col gap-2 ml-4">
+                                            <button onClick={() => setData(move(data, idx, -1))} className="text-gray-300 hover:text-orange-900 text-xl">▲</button>
+                                            <button onClick={() => setData(move(data, idx, 1))} className="text-gray-300 hover:text-orange-900 text-xl">▼</button>
                                         </div>
-                                    ))}
-                                </div>
-
-                                <form onSubmit={(e) => {
-                                    e.preventDefault();
-                                    const fd = new FormData(e.target);
-                                    const newCh = { id: Date.now(), name: fd.get('n') };
-                                    setData(data.map(d => d.id === currentItem.id ? {...d, characters: [...(d.characters || []), newCh]} : d));
-                                    e.target.reset();
-                                }} className="mt-8 p-6 bg-orange-50/30 rounded-2xl border border-dashed border-orange-200">
-                                    <input name="n" required placeholder="新しいキャラ名" className="w-full mb-3 p-3 rounded-xl bg-white outline-none text-sm" />
-                                    <button className="w-full bg-orange-950 text-white py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest">ランキングに追加</button>
-                                </form>
+                                    </div>
+                                ))}
                             </div>
-                        )}
+                        </div>
+                    )}
 
-                        {view === 'add' && (
-                            <div>
-                                <h2 className="text-lg font-bold mb-8 text-center text-orange-950">{editTarget ? '作品の編集' : '新規登録'}</h2>
-                                <form onSubmit={saveItem} className="space-y-6">
-                                    <input name="title" defaultValue={editTarget?.title} required className="w-full p-4 rounded-xl bg-white outline-none font-bold" placeholder="作品名" />
-                                    <input name="category" defaultValue={editTarget?.category} className="w-full p-4 rounded-xl bg-white outline-none text-sm" placeholder="カテゴリ (例: アニメ, 癒やし)" />
-                                    <textarea name="memo" defaultValue={editTarget?.memo} className="w-full p-4 rounded-xl bg-white outline-none h-40 text-sm" placeholder="メモ・感想" />
-                                    <button className="w-full bg-orange-900 text-white py-4 rounded-xl font-bold shadow-xl">保存して同期</button>
-                                    <button type="button" onClick={() => setView('home')} className="w-full text-orange-200 text-[10px] font-bold py-4">キャンセル</button>
-                                </form>
+                    {view === 'det' && current && (
+                        <div className="animate-in">
+                            <button onClick={() => setView('home')} className="mb-6 text-[10px] font-bold text-orange-200 uppercase tracking-widest">← Back</button>
+                            <div className="card p-6 mb-8 border-l-4 border-orange-900">
+                                <h2 className="text-2xl font-bold mb-2">{current.title}</h2>
+                                <p className="text-sm text-gray-500 whitespace-pre-wrap leading-relaxed">{current.memo}</p>
                             </div>
-                        )}
-                    </main>
+                            <h3 className="text-[10px] font-bold text-orange-900 uppercase tracking-widest mb-4">Character Ranking</h3>
+                            <div className="space-y-3">
+                                {(current.chars || []).map((ch, ci) => (
+                                    <div key={ch.id} className="card p-4 flex justify-between items-center border">
+                                        <div className="flex items-center gap-4">
+                                            <span className="rank-num text-2xl opacity-30">#{ci + 1}</span>
+                                            <div className="font-bold text-sm">{ch.name}</div>
+                                        </div>
+                                        <div className="flex gap-4">
+                                            <button onClick={() => {
+                                                const nc = move(current.chars, ci, -1);
+                                                setData(data.map(d => d.id === current.id ? {...d, chars: nc} : d));
+                                            }} className="text-gray-300 text-lg">▲</button>
+                                            <button onClick={() => {
+                                                const nc = move(current.chars, ci, 1);
+                                                setData(data.map(d => d.id === current.id ? {...d, chars: nc} : d));
+                                            }} className="text-gray-300 text-lg">▼</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                const n = new FormData(e.target).get('n');
+                                const nch = { id: Date.now(), name: n };
+                                setData(data.map(d => d.id === current.id ? {...d, chars: [...(d.chars||[]), nch]} : d));
+                                e.target.reset();
+                            }} className="mt-8 p-6 bg-orange-50/30 rounded-2xl border border-dashed border-orange-200 text-center">
+                                <input name="n" required placeholder="キャラ名を入力" className="w-full mb-3 p-3 rounded-xl bg-white outline-none text-sm shadow-sm" />
+                                <button className="w-full bg-orange-900 text-white py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-md">ランキングに追加</button>
+                            </form>
+                        </div>
+                    )}
+
+                    {view === 'add' && (
+                        <div>
+                            <h2 className="text-lg font-bold mb-8 text-center text-orange-950 uppercase tracking-widest">New Entry</h2>
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                const fd = new FormData(e.target);
+                                const newItem = { id: Date.now(), title: fd.get('t'), category: fd.get('c') || '未分類', memo: fd.get('m'), chars: [] };
+                                setData([...data, newItem]);
+                                setView('home');
+                            }} className="space-y-6">
+                                <input name="t" required placeholder="作品名" className="w-full p-4 rounded-xl bg-white outline-none font-bold shadow-sm" />
+                                <input name="c" placeholder="カテゴリ (例: アニメ, 漫画)" className="w-full p-4 rounded-xl bg-white outline-none text-sm shadow-sm" />
+                                <textarea name="m" placeholder="感想・記録" className="w-full p-4 rounded-xl bg-white outline-none h-40 text-sm shadow-sm" />
+                                <button className="w-full bg-orange-900 text-white py-4 rounded-xl font-bold shadow-xl active:scale-95 transition">保存してクラウドに同期</button>
+                                <button type="button" onClick={() => setView('home')} className="w-full text-orange-200 text-[10px] font-bold uppercase py-2">キャンセル</button>
+                            </form>
+                        </div>
+                    )}
                 </div>
             );
         }
